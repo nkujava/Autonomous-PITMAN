@@ -29,7 +29,6 @@ All tunable parameters are in `controller/configs/*.yaml`, with angles in degree
 
 | Scenario | Map | Pursue vs. lead | Config |
 |---|---|---|---|
-| [`att`](Scenarios/att/README.md) | Automation Test Track | Grand Marshal police vs. Grand Marshal | none |
 | [`jv_hw_1`](Scenarios/jv_hw_1/README.md) | Johnson Valley | Grand Marshal police vs. Cherrier FCV | `jv_hw_1_pit.yaml` |
 | [`jv_hw_2`](Scenarios/jv_hw_2/README.md) | Johnson Valley | ETK 800 police vs. Ibishu Covet | `jv_hw_2_pit.yaml` |
 
