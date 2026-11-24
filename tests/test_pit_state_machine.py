@@ -106,10 +106,11 @@ class TransitionTest(unittest.TestCase):
         self.assertEqual(later.brake, 0.0)
 
     def test_predictor_extrapolates_before_limit_is_reached(self):
-        # Yaw rate is still below the pit_max_yaw_rate limit but rising fast.
+        # Yaw rate is still below the pit_max_yaw_rate limit but rising fast
+        # (250 deg/s^2), so it trips before the heading limit does.
         t0 = self.enter_pit()
-        rate = lambda t: math.radians(60) * (t - t0)  # noqa: E731
-        heading = lambda t: math.pi / 2 + 0.5 * math.radians(60) * (t - t0) ** 2  # noqa: E731
+        rate = lambda t: math.radians(250) * (t - t0)  # noqa: E731
+        heading = lambda t: math.pi / 2 + 0.5 * math.radians(250) * (t - t0) ** 2  # noqa: E731
         ramp = lambda t: car(t, 1.5, SPEED * t - 3.0, heading=heading(t))  # noqa: E731
         t = t0
         while self.machine.state is State.PIT:
@@ -147,8 +148,13 @@ class TransitionTest(unittest.TestCase):
         self.assertIs(self.machine.state, State.LINE_UP)
         self.machine.update(behind(c.chase_distance + 1.0)(0.05), lead_at(0.05))
         self.assertIs(self.machine.state, State.LINE_UP)  # inside the hysteresis band
-        cmd = self.machine.update(
-            behind(c.chase_distance + c.chase_hysteresis + 1.0)(0.1), lead_at(0.1))
+        far = behind(c.chase_distance + c.chase_hysteresis + 1.0)
+        t = 0.1
+        while t < 0.1 + c.chase_reenter_hold - 0.05:
+            self.machine.update(far(t), lead_at(t))
+            self.assertIs(self.machine.state, State.LINE_UP)  # far, but not for long enough
+            t += 0.05
+        cmd = self.machine.update(far(t + 0.05), lead_at(t + 0.05))
         self.assertIs(self.machine.state, State.CHASE)
         self.assertTrue(cmd.ai_chase)
 
@@ -172,12 +178,84 @@ class TransitionTest(unittest.TestCase):
         self.assertEqual(self.machine.transitions[-1].target, State.LINE_UP)
         self.assertIn("Lead still driving", self.machine.transitions[-1].reason)
 
+    def test_no_chase_during_cooldown_after_collision(self):
+        c = self.machine.config
+        t0 = self.enter_recover()   # includes contact with Lead during the PIT
+        self.run_while(State.RECOVER, self.aligned, lead_at, t0, t0 + 10.0)
+        self.assertIs(self.machine.state, State.LINE_UP)
+        pit_end = self.machine.last_collision_time
+        self.assertIsNotNone(pit_end)
+        far = lambda t: car(t, c.lineup_lateral,  # noqa: E731
+                            SPEED * t - c.lineup_behind - c.chase_distance - c.chase_hysteresis - 5)
+        t = self.machine.transitions[-1].time + 0.05
+        while t < pit_end + c.chase_cooldown - 0.1:
+            cmd = self.machine.update(far(t), lead_at(t))
+            self.assertIs(self.machine.state, State.LINE_UP)   # far, but still cooling down
+            self.assertFalse(cmd.ai_chase)
+            t += 0.05
+        while t < pit_end + c.chase_cooldown + c.chase_reenter_hold + 0.1:
+            cmd = self.machine.update(far(t), lead_at(t))
+            t += 0.05
+        self.assertIs(self.machine.state, State.CHASE)          # cooldown over
+        self.assertTrue(cmd.ai_chase)
+
+    def test_no_collision_means_no_cooldown(self):
+        c = self.machine.config
+        behind = lambda t: car(t, c.lineup_lateral,  # noqa: E731
+                               SPEED * t - c.lineup_behind - c.chase_distance - c.chase_hysteresis - 5)
+        self.machine.update(self.aligned(0), lead_at(0))           # LINE_UP, no contact
+        t = 0.05
+        while self.machine.state is State.LINE_UP and t < 3.0:
+            self.machine.update(behind(t), lead_at(t))
+            t += 0.05
+        self.assertIsNone(self.machine.last_collision_time)
+        self.assertIs(self.machine.state, State.CHASE)              # only the 1 s hold applied
+        self.assertLess(t, c.chase_reenter_hold + 0.2)
+
     def test_spun_but_moving_lead_is_not_pitted(self):
         t0 = self.enter_recover()
-        spun = lambda t: lead_at(t, heading=math.pi, speed=3.0)  # noqa: E731
+        spun = lambda t: lead_at(t, heading=math.pi, speed=8.0)  # noqa: E731  (~18 mph)
         self.run_while(State.RECOVER, self.aligned, spun, t0, t0 + 10.0)
         self.assertEqual(self.machine.transitions[-1].target, State.LINE_UP)
         self.assertFalse(self.machine.done)
+
+    def test_recover_holds_and_never_accelerates_while_lead_slow(self):
+        c = self.machine.config
+        t0 = self.enter_recover()
+        crawling = lambda t: lead_at(t, speed=2.0)  # noqa: E731  (~4.5 mph, not stopped)
+        t = t0
+        while t < t0 + c.recover_timeout + 2.0:      # well past the normal timeout
+            cmd = self.machine.update(self.aligned(t), crawling(t))
+            self.assertIs(self.machine.state, State.RECOVER)
+            self.assertEqual(cmd.throttle, 0.0)
+            self.assertGreater(cmd.brake, 0.0)
+            t += 0.05
+
+    def test_recover_resumes_once_lead_speeds_up(self):
+        c = self.machine.config
+        t0 = self.enter_recover()
+        t = t0
+        for _ in range(40):                          # 2 s with Lead slow
+            self.machine.update(self.aligned(t), lead_at(t, speed=2.0)); t += 0.05
+        self.assertIs(self.machine.state, State.RECOVER)
+        between = (c.recover_lead_slow_speed + c.recover_lead_resume_speed) / 2
+        for _ in range(20):                          # inside the hysteresis band: still waiting
+            self.machine.update(self.aligned(t), lead_at(t, speed=between)); t += 0.05
+        self.assertIs(self.machine.state, State.RECOVER)
+        self.machine.update(self.aligned(t), lead_at(t, speed=c.recover_lead_resume_speed + 1))
+        self.assertIs(self.machine.state, State.LINE_UP)
+
+    def test_recover_matches_faster_lead_with_capped_throttle(self):
+        c = self.machine.config
+        t0 = self.enter_recover()
+        slow_pursuer = lambda t: car(t, c.lineup_lateral, SPEED * t - c.lineup_behind, speed=5.0)  # noqa: E731
+        cmd = None
+        for i in range(10):                          # before RECOVER can settle
+            t = t0 + 0.05 * i
+            cmd = self.machine.update(slow_pursuer(t), lead_at(t))   # Lead at 10 m/s
+        self.assertIs(self.machine.state, State.RECOVER)
+        self.assertGreater(cmd.throttle, 0.0)
+        self.assertLessEqual(cmd.throttle, c.recover_max_throttle)
 
     def test_recover_to_stop_when_lead_stopped(self):
         t0 = self.enter_recover()

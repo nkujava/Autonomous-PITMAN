@@ -18,14 +18,8 @@ return second
 """
 
 
-def run(beamng, scenario, trial, speed_limit_mph=SPEED_LIMIT_MPH, speed_mode="limit"):
-    """Start Lead's route to Southern Highway and leave Pursue under player control.
-
-    ``speed_limit_mph`` is the AI's route speed. ``speed_mode`` is BeamNG's
-    route speed mode: "limit" drives at up to that speed as the AI sees fit;
-    "set" tries to hold it at all times (jv_hw_2 uses this with a speed far
-    above any car's top speed, i.e. flat out).
-    """
+def run(beamng, scenario, trial):
+    """Start Lead's route to Southern Highway and leave Pursue under player control."""
     missing = {"lead", "pursue"}.difference(scenario.vehicles)
     if missing:
         raise RuntimeError(f"Johnson Valley trial {trial} is missing vehicles: {', '.join(sorted(missing))}")
@@ -39,9 +33,9 @@ def run(beamng, scenario, trial, speed_limit_mph=SPEED_LIMIT_MPH, speed_mode="li
     lead.set_shift_mode("arcade")
     lead.ai.drive_using_waypoints(
         [waypoint],
-        route_speed=speed_limit_mph * METRES_PER_SECOND_PER_MPH,
-        route_speed_mode=speed_mode,
+        route_speed=SPEED_LIMIT_MPH * METRES_PER_SECOND_PER_MPH,
+        route_speed_mode="limit",
         drive_in_lane=True,
         avoid_cars=True,
     )
-    print(f"  Player vehicle: pursue. Lead is driving to Southern Highway ({waypoint}) at {'up to ' if speed_mode == 'limit' else ''}{speed_limit_mph:g} mph ({speed_mode}).", flush=True)
+    print(f"  Player vehicle: pursue. Lead is driving to Southern Highway ({waypoint}) at up to {SPEED_LIMIT_MPH} mph.", flush=True)

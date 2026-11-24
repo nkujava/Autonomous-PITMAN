@@ -16,6 +16,7 @@ CONFIG_DIR = Path(__file__).resolve().parent / "configs"
 ANGLE_FIELDS = frozenset({
     "heading_tolerance", "pit_max_yaw_rate", "pit_max_slip", "pit_max_heading_error",
     "stable_yaw_rate", "stable_heading_error", "spin_heading",
+    "recover_throttle_yaw_rate",
 })
 
 

@@ -4,7 +4,9 @@ States::
 
     CHASE --(within chase_distance of the line-up point)--> LINE_UP
       ^                                                        |
-      +----(more than chase_distance + chase_hysteresis away)--+
+      +----(more than chase_distance + chase_hysteresis away --+
+            for chase_reenter_hold s, and at least chase_cooldown s
+            since the last collision with Lead)
 
     LINE_UP --(speed/position matched)--> PIT --(predicted loss of control,
                                                  Lead spun, or timeout)--> RECOVER
@@ -136,9 +138,11 @@ class PitConfig:
     contact_margin: float = 0.2        # m beyond touching that still counts as contact
     # CHASE: BeamNG's built-in chase AI drives while far from the line-up point.
     chase_distance: float = 5.0        # m from the line-up point: hand over to LINE_UP
-    chase_hysteresis: float = 3.0      # m extra before LINE_UP hands back to CHASE
+    chase_hysteresis: float = 10.0     # m extra before LINE_UP hands back to CHASE
+    chase_reenter_hold: float = 1.0    # s LINE_UP must stay that far back before CHASE
     chase_speed: float = 90.0          # m/s AI speed limit (~200 mph: effectively uncapped)
     chase_aggression: float = 1.0      # BeamNG AI aggression, 0..1
+    chase_cooldown: float = 5.0        # s after a collision with Lead before CHASE may be re-entered
 
     lookahead: float = 8.0             # m pure-pursuit look-ahead along the offset line
     max_closing_speed: float = 8.0     # m/s max speed difference while closing the gap
@@ -168,16 +172,24 @@ class PitConfig:
     # prediction_horizon s ahead with its filtered rate of change.
     # Wide limits: keep pushing through the impact and bail out late.
     prediction_horizon: float = 0.2                  # s
-    pit_max_yaw_rate: float = math.radians(45)       # rad/s
+    pit_max_yaw_rate: float = math.radians(80)       # rad/s (impact spikes reach ~70 deg/s)
     pit_max_slip: float = math.radians(12)           # rad body sideslip
     pit_max_heading_error: float = math.radians(35)  # rad from road heading
     min_slip_speed: float = 3.0                      # m/s; sideslip ignored below this
     rate_filter: float = 0.3                         # low-pass weight on new rate samples
 
     # Recover: brake and hold the road heading (Lead's heading at PIT entry).
-    recover_brake: float = 0.35
+    recover_brake: float = 0.35        # brake while the Pursuer is still yawing
     recover_min_time: float = 1.0
-    recover_timeout: float = 8.0
+    recover_timeout: float = 8.0       # ignored while Lead is slow
+    # RECOVER tracks Lead's speed. Below recover_lead_slow_speed it never
+    # accelerates, brakes, and stays in RECOVER until Lead passes
+    # recover_lead_resume_speed again (or stops: STOP).
+    recover_lead_slow_speed: float = 4.47    # m/s (10 mph)
+    recover_lead_resume_speed: float = 5.36  # m/s (12 mph)
+    recover_slow_brake: float = 0.6          # brake while Lead is slow
+    recover_max_throttle: float = 0.5        # throttle cap while matching Lead's speed
+    recover_throttle_yaw_rate: float = math.radians(15)  # no throttle while yawing faster
     stable_yaw_rate: float = math.radians(8)
     stable_heading_error: float = math.radians(10)
     stable_hold_time: float = 0.5
@@ -288,6 +300,9 @@ class PitStateMachine:
         self._timer_start = None      # start of the current hold/contact timer
         self._road_heading = None     # Lead heading at PIT entry
         self._lead_stopped_since = None   # time Lead's speed last dropped to ~0
+        self.last_collision_time = None   # last time the two cars' footprints overlapped
+        self._lead_slow = False           # RECOVER: Lead below the slow-speed threshold
+        self._far_since = None            # time LINE_UP first fell past the CHASE distance
         self._speed_integral = 0.0
 
     # ------------------------------------------------------------------ helpers
@@ -308,6 +323,16 @@ class PitStateMachine:
         c = self.config
         longitudinal, lateral = self.lead_frame(pursuer, lead)
         return math.hypot(longitudinal + c.lineup_behind, lateral - c.side * c.lineup_lateral)
+
+    def chase_allowed(self, now: float) -> bool:
+        """False until chase_cooldown s have passed since the last collision with Lead."""
+        return (self.last_collision_time is None
+                or now - self.last_collision_time >= self.config.chase_cooldown)
+
+    def in_contact(self, longitudinal: float, lateral: float) -> bool:
+        """Footprint-overlap estimate of a collision (Lead-frame position of Pursuer)."""
+        c = self.config
+        return abs(lateral) <= c.contact_lateral and abs(longitudinal) <= c.contact_longitudinal
 
     def _go(self, target: State, now: float, reason: str) -> None:
         self.transitions.append(Transition(now, self.state, target, reason))
@@ -393,6 +418,8 @@ class PitStateMachine:
         longitudinal, lateral = self.lead_frame(pursuer, lead)
         in_state = now - self._entered
         self._track_lead_stopped(lead, now)
+        if self.in_contact(longitudinal, lateral):
+            self.last_collision_time = now
         if self.state in (State.CHASE, State.LINE_UP) and self.lead_pitted(now):
             self._go(State.STOP, now, "Lead stopped")
 
@@ -404,7 +431,13 @@ class PitStateMachine:
 
         if self.state is State.LINE_UP:
             distance = self.lineup_distance(pursuer, lead)
-            if distance > c.chase_distance + c.chase_hysteresis:
+            if distance <= c.chase_distance + c.chase_hysteresis:
+                self._far_since = None
+            elif self._far_since is None:
+                self._far_since = now
+            if (self._far_since is not None and self.chase_allowed(now)
+                    and now - self._far_since >= c.chase_reenter_hold):
+                self._far_since = None
                 self._go(State.CHASE, now, f"{distance:.1f} m from line-up point")
                 return Command(ai_chase=True)
             speed_error = pursuer.forward_speed - lead.forward_speed
@@ -432,7 +465,7 @@ class PitStateMachine:
                 return Command(steering, throttle, brake)
 
         if self.state is State.PIT:
-            if abs(lateral) <= c.contact_lateral and abs(longitudinal) <= c.contact_longitudinal:
+            if self.in_contact(longitudinal, lateral):
                 self.contact_made = True
             tag = "after contact" if self.contact_made else "no contact"
             warnings = self.loss_of_control_warnings()
@@ -458,18 +491,31 @@ class PitStateMachine:
             settled = in_state >= c.recover_min_time and self._held(
                 stable, now, c.stable_hold_time
             )
-            if settled or in_state >= c.recover_timeout:
-                why = "stable" if settled else "recover timeout"
-                if self.lead_pitted(now):
-                    self._go(State.STOP, now, f"{why}; Lead stopped")
-                else:
-                    self._go(State.LINE_UP, now, f"{why}; Lead still driving")
-                    # Coast for this tick; LINE_UP speed control starts next update.
-                    return Command(self._track_offset_line(
-                        pursuer, lead, c.side * c.lineup_lateral, c.lookahead, c.max_steering
-                    ))
+            # Lead slow/moving, with hysteresis so it doesn't flicker at the threshold.
+            if self._lead_slow:
+                self._lead_slow = lead.speed < c.recover_lead_resume_speed
             else:
-                return Command(self._hold_heading(pursuer, pursuer_yaw), 0.0, c.recover_brake)
+                self._lead_slow = lead.speed < c.recover_lead_slow_speed
+
+            if settled and self.lead_pitted(now):
+                self._go(State.STOP, now, "stable; Lead stopped")
+            elif not self._lead_slow and (settled or in_state >= c.recover_timeout):
+                why = "stable" if settled else "recover timeout"
+                self._go(State.LINE_UP, now, f"{why}; Lead still driving")
+                # Coast for this tick; LINE_UP speed control starts next update.
+                return Command(self._track_offset_line(
+                    pursuer, lead, c.side * c.lineup_lateral, c.lookahead, c.max_steering
+                ))
+            else:
+                steering = self._hold_heading(pursuer, pursuer_yaw)
+                if self._lead_slow:
+                    # Lead (nearly) stopped: never accelerate, brake and wait.
+                    return Command(steering, 0.0, c.recover_slow_brake)
+                if abs(pursuer_yaw) > c.recover_throttle_yaw_rate:
+                    # Still yawing: no throttle until the spin is damped.
+                    return Command(steering, 0.0, c.recover_brake)
+                throttle, brake = self._speed_command(pursuer.forward_speed, lead.speed)
+                return Command(steering, min(throttle, c.recover_max_throttle), brake)
 
         # State.STOP
         parked = abs(pursuer.forward_speed) < c.stop_speed

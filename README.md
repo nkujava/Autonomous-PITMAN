@@ -17,10 +17,10 @@ py -V:3.12 -m unittest discover tests          # offline tests, no simulator nee
 
 `CHASE` → `LINE_UP` → `PIT` → `RECOVER` → `LINE_UP` (lead still moving) or `STOP` (lead stopped)
 
-- **CHASE:** BeamNG's chase AI drives while the police car is more than 5 m from the line-up point.
+- **CHASE:** BeamNG's chase AI drives while the police car is more than 5 m from the line-up point. It returns only after 1 s more than 15 m back, and not within 5 s of a collision with lead (`chase_cooldown`).
 - **LINE_UP:** matches lead's speed beside its rear quarter.
 - **PIT:** steers into lead with rising throttle until it predicts its own loss of control.
-- **RECOVER:** brakes and damps yaw.
+- **RECOVER:** damps yaw and matches lead's speed. While lead is under 10 mph it never accelerates; it brakes and waits until lead passes 12 mph again.
 - **STOP:** ends once lead's speed is about 0 after at least one PIT attempt.
 
 All tunable parameters are in `controller/configs/*.yaml`, with angles in degrees. `pit_trial.py` runs the simulator loop.

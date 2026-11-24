@@ -23,7 +23,7 @@ class ConfigFileTest(unittest.TestCase):
 
     def test_angles_are_degrees_in_file(self):
         self.assertAlmostEqual(load_pit_overrides("default")["pit_max_yaw_rate"],
-                               math.radians(45))
+                               math.radians(80))
 
     def test_every_config_file_loads(self):
         for path in CONFIG_DIR.glob("*.yaml"):

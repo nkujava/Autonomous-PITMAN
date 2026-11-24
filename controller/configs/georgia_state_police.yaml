@@ -20,9 +20,11 @@ contact_margin: 0.2        # m beyond touching that still counts as contact
 
 # --- CHASE: BeamNG's built-in chase AI while far away ------------------------
 chase_distance: 5.0         # m from the line-up point: hand over to LINE_UP
-chase_hysteresis: 3.0       # m extra before LINE_UP hands back to CHASE
+chase_hysteresis: 10.0      # m extra before LINE_UP hands back to CHASE
+chase_reenter_hold: 1.0     # s LINE_UP must stay that far back before CHASE
 chase_speed: 90.0           # m/s AI speed limit (~200 mph: effectively uncapped)
 chase_aggression: 1.0       # BeamNG AI aggression, 0..1
+chase_cooldown: 5.0         # s after a collision with Lead before CHASE may be re-entered
 
 # --- LINE_UP: closing in ----------------------------------------------------
 lookahead: 8.0             # m pure-pursuit look-ahead
@@ -69,6 +71,11 @@ yaw_rate_gain: 0.4          # steering per rad/s yaw rate
 stable_yaw_rate: 8          # deg/s
 stable_heading_error: 10    # deg
 stable_hold_time: 0.5       # s
+recover_lead_slow_speed: 4.47    # m/s (10 mph): below this, never accelerate, brake and stay in RECOVER
+recover_lead_resume_speed: 5.36  # m/s (12 mph): Lead must pass this to leave RECOVER again
+recover_slow_brake: 0.6          # brake while Lead is slow
+recover_max_throttle: 0.5        # throttle cap while matching Lead's speed
+recover_throttle_yaw_rate: 15    # deg/s: no throttle while yawing faster than this
 
 # --- RECOVER -> STOP / LINE_UP ----------------------------------------------
 spin_heading: 60            # deg Lead heading change that ends the PIT push early

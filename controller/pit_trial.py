@@ -14,6 +14,7 @@ from .config_loader import load_pit_overrides, resolve_config_path
 from .pit_state_machine import PitConfig, PitStateMachine, VehicleState
 
 STEPS_PER_SECOND = 60
+POLICE_LIGHTBAR = 1    # BeamNGpy set_lights lightbar: 0 off, 1 on, 2 higher intensity
 CONTROL_INTERVAL_STEPS = 3   # 20 Hz control
 ABORT_CHECK_TICKS = 5        # check for a player reset every 0.25 s
 
@@ -99,10 +100,12 @@ def run_pit_trial(
 
     try:
         take_back_from_ai()   # also clears any AI left running from before a reset
+        # Police lights on from the start (no effect on a car without a light bar).
+        pursuer.set_lights(lightbar=POLICE_LIGHTBAR, headlights=1)
         for vehicle in (lead, pursuer):
             vehicle.sensors.poll("state")
         start = pursuer.state["time"]
-        last_state = machine.state
+        printed = 0
         print(f"  t=  0.00s start in {machine.state.value}", flush=True)
 
         tick = 0
@@ -127,11 +130,10 @@ def run_pit_trial(
             if not ai_active:
                 pursuer.control(steering=cmd.steering, throttle=cmd.throttle,
                                 brake=cmd.brake, parkingbrake=cmd.parkingbrake)
-            if machine.state is not last_state:
-                t = machine.transitions[-1]
+            for t in machine.transitions[printed:]:
                 print(f"  t={t.time - start:6.2f}s {t.source.value} -> {t.target.value} "
                       f"({t.reason})", flush=True)
-                last_state = machine.state
+            printed = len(machine.transitions)
             if machine.done and cmd.parkingbrake > 0.0:
                 break
             if realtime:

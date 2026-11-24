@@ -11,4 +11,4 @@ Same map, spawn points and route as [`jv_hw_1`](../jv_hw_1/README.md), with diff
 py -V:3.12 Scripts/run_trials.py Configs/jv_hw_2_pit.yaml
 ```
 
-With `manual: n`, lead's AI drives flat out: route speed 450 mph in `set` mode, so it holds full throttle. `manual: y` and **R** work as in `jv_hw_1`.
+With `manual: n`, lead's AI drives the same route as `jv_hw_1`: up to 60 mph in `limit` mode, in lane. `manual: y` and **R** work as in `jv_hw_1`.
