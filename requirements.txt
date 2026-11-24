@@ -1,0 +1,2 @@
+beamngpy==1.37
+PyYAML>=6,<7

@@ -1,0 +1,79 @@
+# PIT controller parameters: georgia_state_police — default tuning with much higher speeds.
+#
+# Copy this file to make a new variant, then select it with PIT_CONFIG in a
+# Scenarios/*/pit.py script. Keys are PitConfig fields in
+# controller/pit_state_machine.py; misspelled keys are rejected.
+# Units: m, s, m/s. Angles are in DEGREES and angular rates in DEG/S here
+# (converted to radians on load). Steering, throttle and brake are 0..1.
+# Omitted keys fall back to the PitConfig defaults.
+#
+# lineup_behind, lineup_lateral, pit_lateral, contact_lateral and
+# contact_longitudinal are normally derived from the cars' sizes via the
+# geometry knobs below. Setting one here overrides the derived value.
+
+# --- Line-up geometry -------------------------------------------------------
+side: 1                    # +1 PIT from Lead's right side, -1 from the left
+rear_axle_fraction: 0.3    # Lead rear axle behind its centre, x Lead length
+lineup_gap: 0.3            # m side gap while lining up
+pit_depth: 1.5             # m the PIT aim point sits inside Lead's flank
+contact_margin: 0.2        # m beyond touching that still counts as contact
+
+# --- CHASE: BeamNG's built-in chase AI while far away ------------------------
+chase_distance: 5.0         # m from the line-up point: hand over to LINE_UP
+chase_hysteresis: 3.0       # m extra before LINE_UP hands back to CHASE
+chase_speed: 90.0           # m/s AI speed limit (~200 mph: effectively uncapped)
+chase_aggression: 1.0       # BeamNG AI aggression, 0..1
+
+# --- LINE_UP: closing in ----------------------------------------------------
+lookahead: 8.0             # m pure-pursuit look-ahead
+max_closing_speed: 20.0    # m/s max speed above/below Lead while closing (default 8)
+gap_gain: 5.0              # (m/s) per m of gap error: hits max closing speed sooner (default 2)
+max_throttle: 1.0
+max_brake: 0.6
+speed_kp: 0.25
+speed_ki: 0.05
+integral_limit: 0.25
+steer_gain: 1.2            # steering per rad of pure-pursuit angle
+max_steering: 0.5
+
+# --- LINE_UP -> PIT entry tolerances ----------------------------------------
+speed_tolerance: 2.5        # m/s
+longitudinal_tolerance: 1.5 # m
+lateral_tolerance: 0.9      # m
+heading_tolerance: 12       # deg
+min_lead_speed: 4.0         # m/s
+entry_hold_time: 0.2        # s
+
+# --- PIT: the push ----------------------------------------------------------
+pit_lookahead: 3.0          # m (shorter = sharper steer-in)
+pit_max_steering: 0.9
+pit_throttle_start: 1.0     # full throttle from the start of the PIT (default 0.7)
+pit_throttle_ramp: 1.5      # throttle added per second
+pit_max_throttle: 1.0
+pit_timeout: 5.0            # s
+
+# --- PIT -> RECOVER: predicted loss of control ------------------------------
+prediction_horizon: 0.2     # s
+pit_max_yaw_rate: 45        # deg/s
+pit_max_slip: 12            # deg
+pit_max_heading_error: 35   # deg
+min_slip_speed: 3.0         # m/s
+rate_filter: 0.3            # 0..1, lower = smoother rate estimates
+
+# --- RECOVER ----------------------------------------------------------------
+recover_brake: 0.35
+recover_min_time: 1.0       # s
+recover_timeout: 8.0        # s
+heading_gain: 1.5           # steering per rad heading error
+yaw_rate_gain: 0.4          # steering per rad/s yaw rate
+stable_yaw_rate: 8          # deg/s
+stable_heading_error: 10    # deg
+stable_hold_time: 0.5       # s
+
+# --- RECOVER -> STOP / LINE_UP ----------------------------------------------
+spin_heading: 60            # deg Lead heading change that ends the PIT push early
+lead_stopped_speed: 0.1     # m/s; Lead only counts as pitted once stopped (speed ~0)
+lead_stopped_hold: 0.5      # s Lead must stay stopped
+
+# --- STOP -------------------------------------------------------------------
+stop_speed: 0.5             # m/s

@@ -1,0 +1,14 @@
+scenario: jv_hw_2
+trials: 1
+replay_on_reset: true
+pipeline:
+  - cleanup
+  - setup
+  - run
+level: johnson_valley
+prefab: jv_hw_2.prefab.json
+player_vehicle: pursue
+script: pit.py
+pit_config: default     # parameter file in controller/configs/
+manual: n                 # y = you drive manual_vehicle yourself, n = BeamNG AI drives lead
+manual_vehicle: lead       # the car you drive when manual: y
